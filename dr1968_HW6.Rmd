@@ -1,0 +1,173 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+##Homework
+
+1. Choose an appropriate machine learning dataset and use SVM with two different kernels. Campare the results. 
+
+2. Attempt using SVM after using a previously covered feature selection method. Do the results improve? Explain. 
+
+
+```{r}
+library(tidyverse)
+library(mlbench)
+library(caret)
+library(pROC)
+```
+
+#Load in Dataset and transform the data
+```{r}
+data("PimaIndiansDiabetes")
+head(PimaIndiansDiabetes)
+dim(PimaIndiansDiabetes)
+summary(PimaIndiansDiabetes$diabetes)
+
+
+PimaIndians_num = transform(PimaIndiansDiabetes, pregnant = as.numeric(pregnant), 
+                         glucose = as.numeric(glucose),
+                         pressure = as.numeric(pressure),
+                         triceps = as.numeric(triceps), 
+                         insulin = as.numeric(insulin),
+                         mass = as.numeric(mass),
+                         pedigree = as.numeric(pedigree), 
+                         age = as.numeric(age))
+
+PimaIndians_num[is.na(PimaIndians_num)] = 0
+```
+
+#Create Test and training sets
+```{r}
+train_size = floor(0.75 * nrow(PimaIndians_num))
+train_pos <- sample(seq_len(nrow(PimaIndians_num)), size = train_size)
+
+train_classification <- PimaIndians_num[train_pos, ]
+test_classification <- PimaIndians_num[-train_pos, ]
+```
+
+
+#SVM with Linear Kernel
+```{r}
+set.seed(112)
+control = trainControl(method = "repeatedcv", repeats = 5, classProbs = T, savePredictions = T, allowParallel = T)
+
+svm = train(diabetes ~ pregnant + glucose + pressure + triceps + insulin + mass + pedigree + age ,  data = train_classification, method = "svmLinear", tuneLength = 10, trControl = control)
+
+svm
+```
+
+#ROC
+```{r}
+roc(predictor = svm$pred$pos, response = svm$pred$obs)$auc
+
+plot(x = roc(predictor = svm$pred$pos, response = svm$pred$obs)$specificities, y = roc(predictor = svm$pred$pos, response = svm$pred$obs)$sensitivities, col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity", xlab = "Specificity")
+```
+Generally speaking, the model is rather poor with only an accuracy of 0.7733
+
+#Test Set Confusion Matrix
+```{r}
+svm_test = predict(svm, newdata = test_classification)
+confusionMatrix(svm_test, reference = test_classification$diabetes)
+```
+
+
+#SVM with radial kernel
+```{r}
+set.seed(112)
+control = trainControl(method = "repeatedcv", repeats = 5, classProbs = T, savePredictions = T, allowParallel = T)
+
+svm = train(diabetes ~ pregnant + glucose + pressure + triceps + insulin + mass + pedigree + age ,  data = train_classification, method = "svmRadial", tuneLength = 10, trControl = control)
+
+svm
+```
+
+#ROC
+```{r}
+roc(predictor = svm$pred$pos, response = svm$pred$obs)$auc
+
+plot(x = roc(predictor = svm$pred$pos, response = svm$pred$obs)$specificities, y = roc(predictor = svm$pred$pos, response = svm$pred$obs)$sensitivities, col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity", xlab = "Specificity")
+```
+
+#Confusion Matrix
+```{r}
+svm_test = predict(svm, newdata = test_classification)
+confusionMatrix(svm_test, reference = test_classification$diabetes)
+```
+
+
+
+
+The model seemed to be better using a linear kernel with an AUC of 0.8276 when compared to the AUC received when using a radial kernel (0.7886). Thus, a linear kernel is slightly better for predicting diabetes outcome of this dataset. However, it is important to perform feature selecftion in order to determine which variables better explain the outcome of the dataset, which will help improve the model.
+ 
+ 
+#Feature Selection
+
+For this portion, I will perform feature selection using the RFE Algorithm
+```{r}
+#define the control 
+control = rfeControl(functions = caretFuncs, number = 2)
+
+# run the RFE algorithm
+results = rfe(PimaIndians_num[,1:8], PimaIndians_num[,9], sizes = c(2,5,8), rfeControl = control, method = "svmRadial")
+
+results
+results$variables
+
+plot(results, type=c("g", "o"))
+
+predictors(results)
+```
+ 
+This feature selection method has determined that the top five variables are glucose, mass, age, pregnant, and pedigree. Therefore, I will use solely these five variables for building the model. However, feature selection also shows that the best models for this dataset are built using all eight variables. Therefore, I will attempt SVM using the top five variables, yet expect these models to perform slightly worse than the models I have previously constructed
+
+#SVM with Linear Kernel Again
+```{r}
+set.seed(112)
+control = trainControl(method = "repeatedcv", repeats = 5, classProbs = T, savePredictions = T, allowParallel = T)
+
+svm = train(diabetes ~ glucose + mass + age + pregnant + pedigree,  data = train_classification, method = "svmLinear", tuneLength = 10, trControl = control)
+
+svm
+```
+
+```{r}
+roc(predictor = svm$pred$pos, response = svm$pred$obs)$auc
+
+plot(x = roc(predictor = svm$pred$pos, response = svm$pred$obs)$specificities, y = roc(predictor = svm$pred$pos, response = svm$pred$obs)$sensitivities, col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity", xlab = "Specificity")
+```
+
+#Confusion matrix
+```{r}
+svm_test = predict(svm, newdata = test_classification)
+confusionMatrix(svm_test, reference = test_classification$diabetes)
+```
+The accuracy improved slightly for this model
+
+#SVM with Radial Kernel Again
+```{r}
+set.seed(112)
+control = trainControl(method = "repeatedcv", repeats = 5, classProbs = T, savePredictions = T, allowParallel = T)
+
+svm = train(diabetes ~ glucose + mass + age + pregnant + pedigree,  data = train_classification, method = "svmRadial", tuneLength = 10, trControl = control)
+
+svm
+```
+
+
+#ROC
+```{r}
+roc(predictor = svm$pred$pos, response = svm$pred$obs)$auc
+
+plot(x = roc(predictor = svm$pred$pos, response = svm$pred$obs)$specificities, y = roc(predictor = svm$pred$pos, response = svm$pred$obs)$sensitivities, col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity", xlab = "Specificity")
+```
+
+#Confusion Matrix
+```{r}
+svm_test = predict(svm, newdata = test_classification)
+confusionMatrix(svm_test, reference = test_classification$diabetes)
+```
+
+Just as I expected, the AUCs for both linear and radial kernels performed slightly worse with five variables than with eight variables, yet were still relatively similar to the models previously constructed
